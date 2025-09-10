@@ -1,0 +1,121 @@
+const express = require('express');
+const mysql = require('mysql2');
+const cors = require('cors');
+const multer = require('multer');
+const path = require('path');
+const app = express();
+app.use(cors());
+app.use(express.json());
+app.use('/uploads', express.static('uploads'));
+
+const db = mysql.createConnection({
+  host: 'localhost',
+  user: 'root',      
+  password: 'Hafsa_2005@billa',       
+  database: 'bookshop' 
+});
+
+db.connect(err => {
+  if (err) throw err;
+  console.log('Connected to MySQL database');
+});
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/'); 
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + path.extname(file.originalname)); 
+  }
+});
+
+const upload = multer({ storage });
+
+app.get('/books', (req, res) => {
+  db.query('SELECT * FROM book', (err, results) => {
+    if(err) return res.status(500).json(err);
+    res.json(results);
+  });
+});
+
+app.get('/books/top-sellers', (req, res) => {
+  db.query('SELECT * FROM book b WHERE id BETWEEN 20 AND 30;', (err, results) => {
+    if (err) return res.status(500).json(err);
+    res.json(results);
+  });
+});
+
+
+app.get('/books/recently-added', (req, res) => {
+  db.query('SELECT * FROM book ORDER BY published_date DESC LIMIT 10', (err, results) => {
+    if(err) return res.status(500).json(err);
+    res.json(results);
+  });
+});
+
+app.get('/books/collections/:genre', (req, res) => {
+  const genre = req.params.genre; 
+  let sql = ""; 
+  if (genre.toLowerCase() === 'fiction') {
+    sql = `
+      SELECT b.*, g.genre_name
+      FROM book b
+      JOIN genre g ON b.genre_id = g.id
+      WHERE LOWER(g.genre_name) = 'fiction' OR LOWER(g.genre_name) = 'fantasy'
+    `;
+    db.query(sql, (err, results) => {
+      if (err) return res.status(500).json(err);
+      res.json(results);
+    });
+  } else {
+    sql = `
+      SELECT b.*, g.genre_name 
+      FROM book b
+      JOIN genre g ON b.genre_id = g.id
+      WHERE LOWER(g.genre_name) = LOWER(?)
+    `;
+    db.query(sql, [genre], (err, results) => {
+      if (err) return res.status(500).json(err);
+      res.json(results);
+    });
+  }
+});
+
+app.get('/books/search', (req, res) => {
+  const q = req.query.q; 
+  if (!q) return res.status(400).json({ message: "Query missing" });
+  const sql = `
+    SELECT * FROM book
+    WHERE LOWER(book_name) LIKE LOWER(?)`;
+  db.query(sql, [`%${q}%`], (err, results) => {
+    if (err) return res.status(500).json({message: "Book not found" });
+     if (results.length === 0) {
+      return res.status(404).json({ message: "Book not found" });
+    }
+    res.json(results);
+  });
+});
+
+
+app.get("/books/:id", (req, res) => {
+  const bookId = req.params.id;
+  const sql = `SELECT b.id,b.book_name,b.price,b.published_date,b.ISBN,b.image,a.author_name,g.genre_name
+    FROM book b
+    JOIN author a ON b.author_id = a.id
+    JOIN genre g ON b.genre_id = g.id
+    WHERE b.id = ?`;
+  db.query(sql, [bookId], (err, results) => {
+    if (err) {
+      console.error("DB error:", err);
+      return res.status(500).json({ error: "Database error" });
+    }
+    if (results.length === 0) {
+      return res.status(404).json({ message: "Book not found" });
+    }
+    res.json(results[0]);
+  });
+});
+
+
+
+app.listen(4000, () => console.log('Server running on port 4000'));
